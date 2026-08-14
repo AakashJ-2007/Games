@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UNO Multiplayer | Online Card Game</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@600;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-decorations">
+        <div class="floating-card c-red">7</div>
+        <div class="floating-card c-blue">★</div>
+        <div class="floating-card c-yellow">2</div>
+        <div class="floating-card c-green">⤺</div>
+    </div>
+
+    <main class="main-container">
+        <!-- Brand Header -->
+        <header class="game-header">
+            <div class="logo-badge">
+                <span class="logo-u">U</span><span class="logo-n">N</span><span class="logo-o">O</span>
+            </div>
+            <h1 class="game-title">MULTIPLAYER</h1>
+            <p class="game-subtitle">Play UNO with friends anywhere in real time!</p>
+        </header>
+
+        <!-- Initial Action Card -->
+        <section id="menu-section" class="card-box">
+            <div class="input-group">
+                <label for="player-name">YOUR NICKNAME</label>
+                <input type="text" id="player-name" maxlength="15" placeholder="e.g. Maverick" autocomplete="off">
+                <span class="input-hint">Max 15 characters</span>
+            </div>
+
+            <div class="button-stack">
+                <button id="btn-show-create" class="btn btn-red">CREATE ROOM</button>
+                <button id="btn-show-join" class="btn btn-yellow">JOIN ROOM</button>
+                <button id="btn-rules" class="btn btn-outline">HOW TO PLAY</button>
+            </div>
+        </section>
+
+        <!-- Create Room Modal / Box -->
+        <section id="create-section" class="card-box hidden">
+            <h2>Create a Room</h2>
+            <p class="section-desc">Host a match and invite 1 to 3 friends.</p>
+            
+            <div class="button-stack">
+                <button id="btn-confirm-create" class="btn btn-green">LAUNCH LOBBY</button>
+                <button class="btn btn-outline btn-back">BACK</button>
+            </div>
+        </section>
+
+        <!-- Join Room Box -->
+        <section id="join-section" class="card-box hidden">
+            <h2>Join a Room</h2>
+            <div class="input-group">
+                <label for="room-code-input">6-CHARACTER ROOM CODE</label>
+                <input type="text" id="room-code-input" maxlength="6" placeholder="e.g. A7K92P" style="text-transform: uppercase;">
+            </div>
+
+            <div class="button-stack">
+                <button id="btn-confirm-join" class="btn btn-blue">JOIN GAME</button>
+                <button class="btn btn-outline btn-back">BACK</button>
+            </div>
+        </section>
+
+        <!-- Multiplayer Lobby -->
+        <section id="lobby-section" class="card-box hidden">
+            <div class="lobby-header">
+                <h2>LOBBY</h2>
+                <div class="room-code-badge">
+                    <span>ROOM:</span>
+                    <strong id="display-room-code">------</strong>
+                    <button id="btn-copy-code" title="Copy code" class="copy-btn">📋</button>
+                </div>
+            </div>
+
+            <div class="player-roster">
+                <h3>PLAYERS (<span id="player-count">0</span>/4)</h3>
+                <ul id="lobby-player-list" class="roster-list">
+                    <!-- Dynamic player items -->
+                </ul>
+            </div>
+
+            <div id="lobby-status-msg" class="lobby-message">Waiting for players to join...</div>
+
+            <div class="button-stack">
+                <button id="btn-start-game" class="btn btn-green hidden">START GAME</button>
+                <button id="btn-leave-lobby" class="btn btn-red-outline">LEAVE ROOM</button>
+            </div>
+        </section>
+
+        <!-- Status / Toast Banner -->
+        <div id="toast" class="toast hidden"></div>
+    </main>
+
+    <!-- How To Play Modal -->
+    <div id="rules-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <button id="btn-close-rules" class="modal-close">&times;</button>
+            <h2>How to Play UNO</h2>
+            <div class="rules-body">
+                <div class="rule-item">
+                    <span class="rule-num">1</span>
+                    <p>Every player starts with <strong>7 cards</strong>.</p>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-num">2</span>
+                    <p>Match the top discard card by <strong>Color</strong>, <strong>Number</strong>, or <strong>Action symbol</strong>.</p>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-num">3</span>
+                    <p><strong>Action Cards:</strong> Skip blocks the next player, Reverse changes play direction, and Draw Two forces +2 cards.</p>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-num">4</span>
+                    <p><strong>Wild Cards:</strong> Play anytime to pick any color. Wild Draw Four forces +4 cards!</p>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-num">5</span>
+                    <p><strong>Call UNO:</strong> Press the UNO button when you have 1 card left. If another player catches you first, you draw 2 penalty cards!</p>
+                </div>
+                <div class="rule-item">
+                    <span class="rule-num">6</span>
+                    <p>First player to <strong>get rid of all cards</strong> wins!</p>
+                </div>
+            </div>
+            <button id="btn-understood" class="btn btn-green" style="margin-top: 1.5rem; width: 100%;">GOT IT!</button>
+        </div>
+    </div>
+
+    <!-- Firebase SDK Modules -->
+    <script type="module" src="script.js"></script>
+</body>
+</html>
