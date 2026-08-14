@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "rooms": {
+      "$roomId": {
+        ".read": "auth != null",
+        ".write": "auth != null",
+        "hands": {
+          "$playerId": {
+            ".read": "auth != null && (auth.uid == $playerId || auth.uid == data.parent().parent().child('hostId').val())",
+            ".write": "auth != null"
+          }
+        }
+      }
+    }
+  }
+}
