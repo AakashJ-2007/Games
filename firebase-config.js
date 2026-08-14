@@ -3,7 +3,7 @@
 export const firebaseConfig = {
     apiKey: "AIzaSyCH7_WpFfznkk41aEYg1PdH2WBZmxFltEg",
     authDomain: "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js",
-    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    databaseURL: "https://uno-multiplayer-cc2c-default-rtdb.firebaseio.com",
     projectId: "uno-multiplayer-cc2cf",
     storageBucket: "uno-multiplayer-cc2cf.firebasestorage.app",
     messagingSenderId: "546184053404",
