@@ -1,11 +1,11 @@
-// Firebase configuration for UNO Multiplayer
+// Firebase configuration
+// Replace the placeholder values with your Firebase Project credentials
 export const firebaseConfig = {
-    apiKey: "AIzaSyCg0A0GTVjUAAaHMQtcq_0VquxlWzUEx6Y",
-    authDomain: "uno-multiplayer-28c98.firebaseapp.com",
-    databaseURL: "https://uno-multiplayer-28c98-default-rtdb.firebaseio.com",
-    projectId: "uno-multiplayer-28c98",
-    storageBucket: "uno-multiplayer-28c98.firebasestorage.app",
-    messagingSenderId: "551251573112",
-    appId: "1:551251573112:web:374c3561eb102e302a708d",
-    measurementId: "G-RGB2289VFV"
+    apiKey: "AIzaSyCH7_WpFfznkk41aEYg1PdH2WBZmxFltEg",
+    authDomain: "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js",
+    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    projectId: "uno-multiplayer-cc2cf",
+    storageBucket: "uno-multiplayer-cc2cf.firebasestorage.app",
+    messagingSenderId: "546184053404",
+    appId: "Y1:546184053404:web:ca6d249cfb008139072359"
 };
