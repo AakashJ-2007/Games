@@ -8,7 +8,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getDatabase(app);
 
-// State
+// State Variables
 let currentUser = null;
 let currentRoomId = null;
 let isHost = false;
@@ -40,20 +40,33 @@ const btnUnderstood = document.getElementById("btn-understood");
 const rulesModal = document.getElementById("rules-modal");
 const toast = document.getElementById("toast");
 
-// Toast Utility
+// Toast Notification Helper
 function showToast(msg) {
-    console.log("[Toast]", msg);
+    console.warn("[Game Toast]:", msg);
+    if (!toast) return;
     toast.textContent = msg;
     toast.classList.remove("hidden");
-    setTimeout(() => toast.classList.add("hidden"), 4000);
+    setTimeout(() => {
+        toast.classList.add("hidden");
+    }, 4500);
 }
 
-// Authenticate Anonymously on Page Load
+// Timeout helper to prevent infinite network hangs
+function withTimeout(promise, timeoutMs = 7000, errorMsg = "Operation timed out. Check Realtime Database URL & Rules in Firebase Console.") {
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(errorMsg)), timeoutMs))
+    ]);
+}
+
+// Authenticate Anonymously on startup
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUser = user;
         const savedName = localStorage.getItem("uno_player_name");
-        if (savedName && playerNameInput) playerNameInput.value = savedName;
+        if (savedName && playerNameInput) {
+            playerNameInput.value = savedName;
+        }
     } else {
         signInAnonymously(auth).catch((err) => {
             showToast("Auth Error: " + err.message);
@@ -65,16 +78,20 @@ onAuthStateChanged(auth, (user) => {
 async function ensureAuth() {
     if (currentUser) return currentUser;
     try {
-        const cred = await signInAnonymously(auth);
+        const cred = await withTimeout(
+            signInAnonymously(auth),
+            5000,
+            "Authentication timed out. Make sure Anonymous Auth is enabled in Firebase."
+        );
         currentUser = cred.user;
         return currentUser;
     } catch (err) {
-        showToast("Authentication failed: " + err.message);
+        showToast(err.message);
         return null;
     }
 }
 
-// Generate 6-char Room Code
+// Generate a 6-character room code (without easily confused letters/numbers)
 function generateRoomCode() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code = "";
@@ -84,11 +101,11 @@ function generateRoomCode() {
     return code;
 }
 
-// Validation
+// Validate Player Name
 function validateName() {
     const name = playerNameInput.value.trim();
     if (!name) {
-        showToast("Please enter a nickname first!");
+        showToast("Please enter your nickname first!");
         showSection(menuSection);
         playerNameInput.focus();
         return null;
@@ -101,13 +118,15 @@ function validateName() {
     return name;
 }
 
-// Section Switching
+// UI Navigation: Switch between boxes
 function showSection(section) {
-    [menuSection, createSection, joinSection, lobbySection].forEach(s => s.classList.add("hidden"));
-    section.classList.remove("hidden");
+    [menuSection, createSection, joinSection, lobbySection].forEach((s) => {
+        if (s) s.classList.add("hidden");
+    });
+    if (section) section.classList.remove("hidden");
 }
 
-document.querySelectorAll(".btn-back").forEach(btn => {
+document.querySelectorAll(".btn-back").forEach((btn) => {
     btn.addEventListener("click", () => showSection(menuSection));
 });
 
@@ -119,7 +138,9 @@ btnShowJoin.addEventListener("click", () => {
     if (validateName()) showSection(joinSection);
 });
 
-// Create Room Action
+// ----------------------------------------------------
+// CREATE ROOM HANDLER (With Timeout Protection)
+// ----------------------------------------------------
 btnConfirmCreate.addEventListener("click", async () => {
     const name = validateName();
     if (!name) return;
@@ -157,22 +178,29 @@ btnConfirmCreate.addEventListener("click", async () => {
     };
 
     try {
-        await set(roomRef, initialData);
+        await withTimeout(
+            set(roomRef, initialData),
+            7000,
+            "Database connection timed out! Make sure Realtime Database is created in Firebase Console and rules are set to public."
+        );
 
+        // Disconnect handler
         const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
         onDisconnect(playerRef).update({ connected: false });
 
         enterLobby(roomId);
     } catch (err) {
         console.error(err);
-        showToast("Database Error: " + err.message);
+        showToast(err.message);
     } finally {
         btnConfirmCreate.disabled = false;
         btnConfirmCreate.textContent = "LAUNCH LOBBY";
     }
 });
 
-// Join Room Action
+// ----------------------------------------------------
+// JOIN ROOM HANDLER (With Timeout Protection)
+// ----------------------------------------------------
 btnConfirmJoin.addEventListener("click", async () => {
     const name = validateName();
     const code = roomCodeInput.value.trim().toUpperCase();
@@ -195,9 +223,14 @@ btnConfirmJoin.addEventListener("click", async () => {
 
     const roomRef = ref(db, `rooms/${code}`);
     try {
-        const snapshot = await get(roomRef);
+        const snapshot = await withTimeout(
+            get(roomRef),
+            7000,
+            "Connection timed out. Check your Internet connection and Firebase configuration."
+        );
+
         if (!snapshot.exists()) {
-            showToast("Room does not exist.");
+            showToast("Room does not exist. Check code.");
             return;
         }
 
@@ -216,16 +249,18 @@ btnConfirmJoin.addEventListener("click", async () => {
         }
 
         currentRoomId = code;
-        isHost = (roomData.hostId === user.uid);
+        isHost = roomData.hostId === user.uid;
 
-        await update(ref(db, `rooms/${code}/players/${user.uid}`), {
-            id: user.uid,
-            name: name,
-            isHost: isHost,
-            cardCount: 0,
-            unoCalled: false,
-            connected: true
-        });
+        await withTimeout(
+            update(ref(db, `rooms/${code}/players/${user.uid}`), {
+                id: user.uid,
+                name: name,
+                isHost: isHost,
+                cardCount: 0,
+                unoCalled: false,
+                connected: true
+            })
+        );
 
         const playerRef = ref(db, `rooms/${code}/players/${user.uid}`);
         onDisconnect(playerRef).update({ connected: false });
@@ -233,14 +268,16 @@ btnConfirmJoin.addEventListener("click", async () => {
         enterLobby(code);
     } catch (err) {
         console.error(err);
-        showToast("Error joining room: " + err.message);
+        showToast(err.message);
     } finally {
         btnConfirmJoin.disabled = false;
         btnConfirmJoin.textContent = "JOIN GAME";
     }
 });
 
-// Enter & Listen to Lobby
+// ----------------------------------------------------
+// LOBBY REAL-TIME LISTENER
+// ----------------------------------------------------
 function enterLobby(roomId) {
     showSection(lobbySection);
     displayRoomCode.textContent = roomId;
@@ -251,13 +288,14 @@ function enterLobby(roomId) {
 
     roomUnsubscribe = onValue(roomRef, (snapshot) => {
         if (!snapshot.exists()) {
-            showToast("Room has been closed.");
+            showToast("Room has been closed or removed.");
             leaveLobby(false);
             return;
         }
 
         const roomData = snapshot.val();
 
+        // Redirect to game arena if host started the game
         if (roomData.status === "playing") {
             sessionStorage.setItem("uno_room_id", roomId);
             sessionStorage.setItem("uno_player_id", currentUser.uid);
@@ -266,8 +304,9 @@ function enterLobby(roomId) {
         }
 
         const players = roomData.players || {};
-        const activePlayers = Object.values(players).filter(p => p.connected !== false);
+        const activePlayers = Object.values(players).filter((p) => p.connected !== false);
 
+        // Host migration if original host left
         if (!players[roomData.hostId] || players[roomData.hostId].connected === false) {
             if (activePlayers.length > 0) {
                 const newHost = activePlayers[0];
@@ -276,9 +315,10 @@ function enterLobby(roomId) {
             }
         }
 
-        isHost = (roomData.hostId === currentUser.uid);
+        isHost = roomData.hostId === currentUser.uid;
         playerCount.textContent = activePlayers.length;
 
+        // Render player roster
         lobbyPlayerList.innerHTML = "";
         activePlayers.forEach((p, idx) => {
             const li = document.createElement("li");
@@ -290,6 +330,7 @@ function enterLobby(roomId) {
             lobbyPlayerList.appendChild(li);
         });
 
+        // Host actions & buttons
         if (isHost) {
             btnStartGame.classList.remove("hidden");
             if (activePlayers.length >= 2) {
@@ -306,48 +347,61 @@ function enterLobby(roomId) {
     });
 }
 
-// Start Game Handler
+// ----------------------------------------------------
+// START GAME ACTION (HOST ONLY)
+// ----------------------------------------------------
 btnStartGame.addEventListener("click", async () => {
     if (!isHost || !currentRoomId) return;
+
+    btnStartGame.disabled = true;
+    btnStartGame.textContent = "DEALING...";
 
     try {
         const snapshot = await get(ref(db, `rooms/${currentRoomId}/players`));
         const players = snapshot.val() || {};
-        const playerIds = Object.keys(players).filter(id => players[id].connected !== false);
+        const playerIds = Object.keys(players).filter((id) => players[id].connected !== false);
 
         if (playerIds.length < 2) {
             showToast("Need at least 2 connected players to start!");
+            btnStartGame.disabled = false;
+            btnStartGame.textContent = "START GAME";
             return;
         }
 
         const { deck, hands, topCard } = initializeGameCards(playerIds);
 
         const playerUpdates = {};
-        playerIds.forEach(id => {
+        playerIds.forEach((id) => {
             playerUpdates[`rooms/${currentRoomId}/players/${id}/cardCount`] = 7;
             playerUpdates[`rooms/${currentRoomId}/players/${id}/unoCalled`] = false;
             playerUpdates[`rooms/${currentRoomId}/hands/${id}`] = hands[id];
         });
 
-        await update(ref(db), {
-            ...playerUpdates,
-            [`rooms/${currentRoomId}/status`]: "playing",
-            [`rooms/${currentRoomId}/game`]: {
-                deck: deck,
-                discardPile: [topCard],
-                currentColor: topCard.color === "wild" ? "red" : topCard.color,
-                turnIndex: 0,
-                direction: 1,
-                turnPlayerId: playerIds[0],
-                playerOrder: playerIds,
-                lastAction: "Game has started!",
-                cardsDrawnThisTurn: 0,
-                totalTurns: 0,
-                totalCardsPlayed: 1
-            }
-        });
+        await withTimeout(
+            update(ref(db), {
+                ...playerUpdates,
+                [`rooms/${currentRoomId}/status`]: "playing",
+                [`rooms/${currentRoomId}/game`]: {
+                    deck: deck,
+                    discardPile: [topCard],
+                    currentColor: topCard.color === "wild" ? "red" : topCard.color,
+                    turnIndex: 0,
+                    direction: 1,
+                    turnPlayerId: playerIds[0],
+                    playerOrder: playerIds,
+                    lastAction: "Game has started!",
+                    cardsDrawnThisTurn: 0,
+                    totalTurns: 0,
+                    totalCardsPlayed: 1
+                }
+            }),
+            8000,
+            "Failed to start game due to connection timeout."
+        );
     } catch (err) {
         showToast("Error starting game: " + err.message);
+        btnStartGame.disabled = false;
+        btnStartGame.textContent = "START GAME";
     }
 });
 
@@ -358,50 +412,55 @@ function initializeGameCards(playerIds) {
     const actions = ["skip", "reverse", "draw2"];
     let deck = [];
 
-    colors.forEach(color => {
+    // Colored cards
+    colors.forEach((color) => {
         deck.push({ id: `${color}-0-${Math.random()}`, color, value: "0", type: "number" });
         for (let i = 0; i < 2; i++) {
-            numbers.slice(1).forEach(num => {
+            numbers.slice(1).forEach((num) => {
                 deck.push({ id: `${color}-${num}-${i}-${Math.random()}`, color, value: num, type: "number" });
             });
-            actions.forEach(action => {
+            actions.forEach((action) => {
                 deck.push({ id: `${color}-${action}-${i}-${Math.random()}`, color, value: action, type: "action" });
             });
         }
     });
 
+    // 4 Wild and 4 Wild Draw 4 cards
     for (let i = 0; i < 4; i++) {
         deck.push({ id: `wild-${i}-${Math.random()}`, color: "wild", value: "wild", type: "wild" });
         deck.push({ id: `wild4-${i}-${Math.random()}`, color: "wild", value: "wild4", type: "wild" });
     }
 
+    // Fisher-Yates Shuffle
     for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [deck[i], deck[j]] = [deck[j], deck[i]];
     }
 
+    // Deal 7 cards each
     const hands = {};
-    playerIds.forEach(id => {
+    playerIds.forEach((id) => {
         hands[id] = deck.splice(0, 7);
     });
 
-    let topCardIndex = deck.findIndex(c => c.value !== "wild4");
+    // Pick top discard card
+    let topCardIndex = deck.findIndex((c) => c.value !== "wild4");
     if (topCardIndex === -1) topCardIndex = 0;
     const topCard = deck.splice(topCardIndex, 1)[0];
 
     return { deck, hands, topCard };
 }
 
-// Copy Code
+// Copy Code Button
 btnCopyCode.addEventListener("click", () => {
     if (currentRoomId) {
         navigator.clipboard.writeText(currentRoomId).then(() => {
-            showToast("Room code copied!");
+            showToast("Room code copied to clipboard!");
         });
     }
 });
 
-// Leave Lobby
+// Leave Lobby Handler
 async function leaveLobby(shouldClean = true) {
     if (shouldClean && currentRoomId && currentUser) {
         try {
@@ -417,7 +476,7 @@ async function leaveLobby(shouldClean = true) {
 }
 btnLeaveLobby.addEventListener("click", () => leaveLobby(true));
 
-// Rules Modal
+// Rules Modal Handlers
 btnRules.addEventListener("click", () => rulesModal.classList.remove("hidden"));
 btnCloseRules.addEventListener("click", () => rulesModal.classList.add("hidden"));
 btnUnderstood.addEventListener("click", () => rulesModal.classList.add("hidden"));
