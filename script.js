@@ -40,13 +40,20 @@ const btnUnderstood = document.getElementById("btn-understood");
 const rulesModal = document.getElementById("rules-modal");
 const toast = document.getElementById("toast");
 
-// Authenticate Anonymously
+// Toast Utility
+function showToast(msg) {
+    console.log("[Toast]", msg);
+    toast.textContent = msg;
+    toast.classList.remove("hidden");
+    setTimeout(() => toast.classList.add("hidden"), 4000);
+}
+
+// Authenticate Anonymously on Page Load
 onAuthStateChanged(auth, (user) => {
     if (user) {
         currentUser = user;
-        // Restore cached nickname if available
         const savedName = localStorage.getItem("uno_player_name");
-        if (savedName) playerNameInput.value = savedName;
+        if (savedName && playerNameInput) playerNameInput.value = savedName;
     } else {
         signInAnonymously(auth).catch((err) => {
             showToast("Auth Error: " + err.message);
@@ -54,14 +61,20 @@ onAuthStateChanged(auth, (user) => {
     }
 });
 
-// Toast Utility
-function showToast(msg) {
-    toast.textContent = msg;
-    toast.classList.remove("hidden");
-    setTimeout(() => toast.classList.add("hidden"), 3500);
+// Helper: Ensure user is logged in before database actions
+async function ensureAuth() {
+    if (currentUser) return currentUser;
+    try {
+        const cred = await signInAnonymously(auth);
+        currentUser = cred.user;
+        return currentUser;
+    } catch (err) {
+        showToast("Authentication failed: " + err.message);
+        return null;
+    }
 }
 
-// Generate 6-char Room Code (Excluding confusing chars like O/0, 1/I)
+// Generate 6-char Room Code
 function generateRoomCode() {
     const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     let code = "";
@@ -76,6 +89,7 @@ function validateName() {
     const name = playerNameInput.value.trim();
     if (!name) {
         showToast("Please enter a nickname first!");
+        showSection(menuSection);
         playerNameInput.focus();
         return null;
     }
@@ -108,7 +122,17 @@ btnShowJoin.addEventListener("click", () => {
 // Create Room Action
 btnConfirmCreate.addEventListener("click", async () => {
     const name = validateName();
-    if (!name || !currentUser) return;
+    if (!name) return;
+
+    btnConfirmCreate.disabled = true;
+    btnConfirmCreate.textContent = "CREATING...";
+
+    const user = await ensureAuth();
+    if (!user) {
+        btnConfirmCreate.disabled = false;
+        btnConfirmCreate.textContent = "LAUNCH LOBBY";
+        return;
+    }
 
     const roomId = generateRoomCode();
     currentRoomId = roomId;
@@ -117,12 +141,12 @@ btnConfirmCreate.addEventListener("click", async () => {
     const roomRef = ref(db, `rooms/${roomId}`);
     const initialData = {
         roomId: roomId,
-        hostId: currentUser.uid,
-        status: "lobby", // lobby, playing, finished
+        hostId: user.uid,
+        status: "lobby",
         createdAt: Date.now(),
         players: {
-            [currentUser.uid]: {
-                id: currentUser.uid,
+            [user.uid]: {
+                id: user.uid,
                 name: name,
                 isHost: true,
                 cardCount: 0,
@@ -135,13 +159,16 @@ btnConfirmCreate.addEventListener("click", async () => {
     try {
         await set(roomRef, initialData);
 
-        // Auto-cleanup on disconnect
-        const playerRef = ref(db, `rooms/${roomId}/players/${currentUser.uid}`);
+        const playerRef = ref(db, `rooms/${roomId}/players/${user.uid}`);
         onDisconnect(playerRef).update({ connected: false });
 
         enterLobby(roomId);
     } catch (err) {
-        showToast("Failed to create room: " + err.message);
+        console.error(err);
+        showToast("Database Error: " + err.message);
+    } finally {
+        btnConfirmCreate.disabled = false;
+        btnConfirmCreate.textContent = "LAUNCH LOBBY";
     }
 });
 
@@ -150,9 +177,19 @@ btnConfirmJoin.addEventListener("click", async () => {
     const name = validateName();
     const code = roomCodeInput.value.trim().toUpperCase();
 
-    if (!name || !currentUser) return;
+    if (!name) return;
     if (code.length !== 6) {
         showToast("Room code must be 6 characters long.");
+        return;
+    }
+
+    btnConfirmJoin.disabled = true;
+    btnConfirmJoin.textContent = "JOINING...";
+
+    const user = await ensureAuth();
+    if (!user) {
+        btnConfirmJoin.disabled = false;
+        btnConfirmJoin.textContent = "JOIN GAME";
         return;
     }
 
@@ -166,24 +203,23 @@ btnConfirmJoin.addEventListener("click", async () => {
 
         const roomData = snapshot.val();
         if (roomData.status !== "lobby") {
-            showToast("Game in this room has already started or finished.");
+            showToast("Game in this room has already started or ended.");
             return;
         }
 
         const players = roomData.players || {};
         const playerKeys = Object.keys(players);
 
-        if (playerKeys.length >= 4 && !players[currentUser.uid]) {
-            showToast("Room is currently full (Max 4 players).");
+        if (playerKeys.length >= 4 && !players[user.uid]) {
+            showToast("Room is full (Max 4 players).");
             return;
         }
 
         currentRoomId = code;
-        isHost = (roomData.hostId === currentUser.uid);
+        isHost = (roomData.hostId === user.uid);
 
-        // Add player to room
-        await update(ref(db, `rooms/${code}/players/${currentUser.uid}`), {
-            id: currentUser.uid,
+        await update(ref(db, `rooms/${code}/players/${user.uid}`), {
+            id: user.uid,
             name: name,
             isHost: isHost,
             cardCount: 0,
@@ -191,12 +227,16 @@ btnConfirmJoin.addEventListener("click", async () => {
             connected: true
         });
 
-        const playerRef = ref(db, `rooms/${code}/players/${currentUser.uid}`);
+        const playerRef = ref(db, `rooms/${code}/players/${user.uid}`);
         onDisconnect(playerRef).update({ connected: false });
 
         enterLobby(code);
     } catch (err) {
+        console.error(err);
         showToast("Error joining room: " + err.message);
+    } finally {
+        btnConfirmJoin.disabled = false;
+        btnConfirmJoin.textContent = "JOIN GAME";
     }
 });
 
@@ -218,7 +258,6 @@ function enterLobby(roomId) {
 
         const roomData = snapshot.val();
 
-        // If game started, redirect to game arena
         if (roomData.status === "playing") {
             sessionStorage.setItem("uno_room_id", roomId);
             sessionStorage.setItem("uno_player_id", currentUser.uid);
@@ -229,7 +268,6 @@ function enterLobby(roomId) {
         const players = roomData.players || {};
         const activePlayers = Object.values(players).filter(p => p.connected !== false);
 
-        // Host migration if host left
         if (!players[roomData.hostId] || players[roomData.hostId].connected === false) {
             if (activePlayers.length > 0) {
                 const newHost = activePlayers[0];
@@ -241,7 +279,6 @@ function enterLobby(roomId) {
         isHost = (roomData.hostId === currentUser.uid);
         playerCount.textContent = activePlayers.length;
 
-        // Render players list
         lobbyPlayerList.innerHTML = "";
         activePlayers.forEach((p, idx) => {
             const li = document.createElement("li");
@@ -253,7 +290,6 @@ function enterLobby(roomId) {
             lobbyPlayerList.appendChild(li);
         });
 
-        // Host controls
         if (isHost) {
             btnStartGame.classList.remove("hidden");
             if (activePlayers.length >= 2) {
@@ -261,7 +297,7 @@ function enterLobby(roomId) {
                 lobbyStatusMsg.textContent = "Ready to begin! Click Start Game.";
             } else {
                 btnStartGame.disabled = true;
-                lobbyStatusMsg.textContent = "Waiting for at least 2 players...";
+                lobbyStatusMsg.textContent = "Waiting for at least 2 players to join...";
             }
         } else {
             btnStartGame.classList.add("hidden");
@@ -270,7 +306,7 @@ function enterLobby(roomId) {
     });
 }
 
-// Start Game Handler (Host Only)
+// Start Game Handler
 btnStartGame.addEventListener("click", async () => {
     if (!isHost || !currentRoomId) return;
 
@@ -284,10 +320,8 @@ btnStartGame.addEventListener("click", async () => {
             return;
         }
 
-        // Initialize and deal deck
         const { deck, hands, topCard } = initializeGameCards(playerIds);
 
-        // Update player card counts
         const playerUpdates = {};
         playerIds.forEach(id => {
             playerUpdates[`rooms/${currentRoomId}/players/${id}/cardCount`] = 7;
@@ -295,7 +329,6 @@ btnStartGame.addEventListener("click", async () => {
             playerUpdates[`rooms/${currentRoomId}/hands/${id}`] = hands[id];
         });
 
-        // Set game status & state
         await update(ref(db), {
             ...playerUpdates,
             [`rooms/${currentRoomId}/status`]: "playing",
@@ -304,7 +337,7 @@ btnStartGame.addEventListener("click", async () => {
                 discardPile: [topCard],
                 currentColor: topCard.color === "wild" ? "red" : topCard.color,
                 turnIndex: 0,
-                direction: 1, // 1 for clockwise, -1 for counter-clockwise
+                direction: 1,
                 turnPlayerId: playerIds[0],
                 playerOrder: playerIds,
                 lastAction: "Game has started!",
@@ -325,12 +358,8 @@ function initializeGameCards(playerIds) {
     const actions = ["skip", "reverse", "draw2"];
     let deck = [];
 
-    // Create colored cards
     colors.forEach(color => {
-        // One 0 per color
         deck.push({ id: `${color}-0-${Math.random()}`, color, value: "0", type: "number" });
-
-        // Two 1-9 & Action cards per color
         for (let i = 0; i < 2; i++) {
             numbers.slice(1).forEach(num => {
                 deck.push({ id: `${color}-${num}-${i}-${Math.random()}`, color, value: num, type: "number" });
@@ -341,25 +370,21 @@ function initializeGameCards(playerIds) {
         }
     });
 
-    // 4 Wild and 4 Wild Draw 4 cards
     for (let i = 0; i < 4; i++) {
         deck.push({ id: `wild-${i}-${Math.random()}`, color: "wild", value: "wild", type: "wild" });
         deck.push({ id: `wild4-${i}-${Math.random()}`, color: "wild", value: "wild4", type: "wild" });
     }
 
-    // Fisher-Yates Shuffle
     for (let i = deck.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [deck[i], deck[j]] = [deck[j], deck[i]];
     }
 
-    // Deal 7 cards to each player
     const hands = {};
     playerIds.forEach(id => {
         hands[id] = deck.splice(0, 7);
     });
 
-    // Pick top discard card (ensure it's not a Wild Draw 4 to avoid start complications)
     let topCardIndex = deck.findIndex(c => c.value !== "wild4");
     if (topCardIndex === -1) topCardIndex = 0;
     const topCard = deck.splice(topCardIndex, 1)[0];
@@ -367,11 +392,11 @@ function initializeGameCards(playerIds) {
     return { deck, hands, topCard };
 }
 
-// Copy Room Code Helper
+// Copy Code
 btnCopyCode.addEventListener("click", () => {
     if (currentRoomId) {
         navigator.clipboard.writeText(currentRoomId).then(() => {
-            showToast("Room code copied to clipboard!");
+            showToast("Room code copied!");
         });
     }
 });
